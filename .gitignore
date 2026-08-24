@@ -19,7 +19,8 @@ data/raw/*.csv
 data/processed/*.csv
 
 # Trained models
-models_saved/
+models_saved/*
+!models_saved/behaviour_aware_xgboost.json
 
 # IDE
 .vscode/
