@@ -6,6 +6,7 @@ from src.predictor import predict_realtime_transaction
 from src.database import get_recent_transactions
 from src.database import get_connection
 
+
 # =========================================================
 # FASTAPI APPLICATION
 # =========================================================
@@ -24,8 +25,6 @@ app = FastAPI(
 # CORS
 # =========================================================
 
-
-
 app.add_middleware(
     CORSMiddleware,
 
@@ -37,7 +36,7 @@ app.add_middleware(
         "https://fraudshield-frontend-bqor.onrender.com"
     ],
 
-    allow_credentials=False
+    allow_credentials=False,
 
     allow_methods=["*"],
 
@@ -119,7 +118,36 @@ def predict(transaction: Transaction):
     receiver_old = data["oldbalanceDest"]
     receiver_new = data["newbalanceDest"]
 
-    # Sender cannot spend more than available balance
+
+    # -----------------------------------------------------
+    # CHECK 1: NEGATIVE VALUES
+    # -----------------------------------------------------
+
+    if (
+        amount < 0
+        or sender_old < 0
+        or sender_new < 0
+        or receiver_old < 0
+        or receiver_new < 0
+    ):
+
+        return {
+            "fraud_probability": 1.0,
+            "fraud_probability_percent": 100.0,
+            "decision": "INVALID TRANSACTION",
+            "risk_level": "HIGH",
+            "validation_status": "FAILED",
+            "validation_message": (
+                "Transaction amount or balance "
+                "cannot be negative."
+            )
+        }
+
+
+    # -----------------------------------------------------
+    # CHECK 2: SENDER HAS ENOUGH BALANCE
+    # -----------------------------------------------------
+
     if amount > sender_old:
 
         return {
@@ -134,7 +162,11 @@ def predict(transaction: Transaction):
             )
         }
 
-    # Check sender balance consistency
+
+    # -----------------------------------------------------
+    # CHECK 3: SENDER BALANCE CONSISTENCY
+    # -----------------------------------------------------
+
     expected_sender_new = sender_old - amount
 
     if abs(sender_new - expected_sender_new) > 0.01:
@@ -151,7 +183,11 @@ def predict(transaction: Transaction):
             )
         }
 
-    # Check receiver balance consistency
+
+    # -----------------------------------------------------
+    # CHECK 4: RECEIVER BALANCE CONSISTENCY
+    # -----------------------------------------------------
+
     expected_receiver_new = receiver_old + amount
 
     if abs(receiver_new - expected_receiver_new) > 0.01:
@@ -168,17 +204,24 @@ def predict(transaction: Transaction):
             )
         }
 
+
     # =====================================================
     # AI FRAUD DETECTION
     # =====================================================
 
     result = predict_realtime_transaction(data)
 
-    # Add validation information
+
+    # =====================================================
+    # ADD VALIDATION INFORMATION
+    # =====================================================
+
     result["validation_status"] = "PASSED"
+
     result["validation_message"] = (
         "Transaction balance information is consistent."
     )
+
 
     return result
 
@@ -195,59 +238,105 @@ def recent_transactions():
     return {
         "transactions": transactions
     }
+
+
+# =========================================================
+# ANALYTICS ENDPOINT
+# =========================================================
+
 @app.get("/analytics")
 def get_analytics():
 
     connection = get_connection()
+
     cursor = connection.cursor(dictionary=True)
 
-    # Total transactions
+
+    # =====================================================
+    # TOTAL TRANSACTIONS
+    # =====================================================
+
     cursor.execute("""
         SELECT COUNT(*) AS total_transactions
         FROM transactions
     """)
-    total = cursor.fetchone()["total_transactions"] or 0
+
+    total = (
+        cursor.fetchone()["total_transactions"]
+        or 0
+    )
 
 
-    # Fraud transactions
+    # =====================================================
+    # FRAUD TRANSACTIONS
+    # =====================================================
+
     cursor.execute("""
         SELECT COUNT(*) AS fraud_transactions
         FROM transactions
         WHERE decision = 'FRAUD'
     """)
-    fraud = cursor.fetchone()["fraud_transactions"] or 0
+
+    fraud = (
+        cursor.fetchone()["fraud_transactions"]
+        or 0
+    )
 
 
-    # Legitimate transactions
+    # =====================================================
+    # LEGITIMATE TRANSACTIONS
+    # =====================================================
+
     cursor.execute("""
         SELECT COUNT(*) AS legitimate_transactions
         FROM transactions
         WHERE decision = 'LEGITIMATE'
     """)
-    legitimate = cursor.fetchone()["legitimate_transactions"] or 0
+
+    legitimate = (
+        cursor.fetchone()["legitimate_transactions"]
+        or 0
+    )
 
 
-    # Total transaction amount
+    # =====================================================
+    # TOTAL TRANSACTION AMOUNT
+    # =====================================================
+
     cursor.execute("""
         SELECT COALESCE(SUM(amount), 0) AS total_amount
         FROM transactions
     """)
-    total_amount = cursor.fetchone()["total_amount"] or 0
+
+    total_amount = (
+        cursor.fetchone()["total_amount"]
+        or 0
+    )
 
 
-    # Average fraud probability
+    # =====================================================
+    # AVERAGE FRAUD PROBABILITY
+    # =====================================================
+
     cursor.execute("""
-        SELECT COALESCE(AVG(fraud_probability), 0)
-        AS average_fraud_probability
+        SELECT
+            COALESCE(
+                AVG(fraud_probability),
+                0
+            ) AS average_fraud_probability
         FROM transactions
     """)
+
     avg_probability = (
         cursor.fetchone()["average_fraud_probability"]
         or 0
     )
 
 
-    # Risk distribution
+    # =====================================================
+    # RISK DISTRIBUTION
+    # =====================================================
+
     cursor.execute("""
         SELECT
             risk_level,
@@ -258,11 +347,13 @@ def get_analytics():
 
     risk_rows = cursor.fetchall()
 
+
     risk_distribution = {
         "HIGH": 0,
         "MEDIUM": 0,
         "LOW": 0
     }
+
 
     for row in risk_rows:
 
@@ -273,7 +364,10 @@ def get_analytics():
             risk_distribution[risk] = row["count"]
 
 
-    # Transaction type distribution
+    # =====================================================
+    # TRANSACTION TYPE DISTRIBUTION
+    # =====================================================
+
     cursor.execute("""
         SELECT
             transaction_type,
@@ -284,7 +378,9 @@ def get_analytics():
 
     type_rows = cursor.fetchall()
 
+
     transaction_types = {}
+
 
     for row in type_rows:
 
@@ -293,8 +389,12 @@ def get_analytics():
         ] = row["count"]
 
 
-    # Fraud rate
+    # =====================================================
+    # FRAUD RATE
+    # =====================================================
+
     fraud_rate = 0
+
 
     if total > 0:
 
@@ -303,9 +403,18 @@ def get_analytics():
         ) * 100
 
 
+    # =====================================================
+    # CLOSE DATABASE CONNECTION
+    # =====================================================
+
     cursor.close()
+
     connection.close()
 
+
+    # =====================================================
+    # RETURN ANALYTICS
+    # =====================================================
 
     return {
 
