@@ -13,6 +13,7 @@ load_dotenv()
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
+    "port": int(os.getenv("DB_PORT", "3306")),
     "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME")
@@ -22,17 +23,15 @@ DB_CONFIG = {
 # =========================================================
 # DATABASE CONNECTION
 # =========================================================
-
 def get_connection():
 
     connection = mysql.connector.connect(
-        host=DB_CONFIG["host"],
-        user=DB_CONFIG["user"],
-        password=DB_CONFIG["password"],
-        database=DB_CONFIG["database"]
+        **DB_CONFIG,
+        ssl_disabled=False
     )
 
     return connection
+
 
 
 # =========================================================
