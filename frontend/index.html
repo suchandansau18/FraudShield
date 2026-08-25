@@ -1566,6 +1566,7 @@
 
 
 <script>
+    const API_URL = "https://fraudshield-vvs5.onrender.com";
 let predictionInProgress = false;
 async function detectFraud() {
 
@@ -1688,9 +1689,7 @@ loading.style.display = "block";
 
     try {
 
-        const response = await fetch(
-            "http://127.0.0.1:8000/predict",
-            {
+       const response = await fetch(`${API_URL}/predict`, {
 
                 method: "POST",
 
@@ -1815,10 +1814,10 @@ loading.style.display = "block";
         console.error(error);
 
         alert(
-            "Unable to connect to the fraud detection API.\n\n" +
-            "Make sure FastAPI is running at:\n" +
-            "http://127.0.0.1:8000"
-        );
+    "Unable to connect to the fraud detection API.\n\n" +
+    "Please check the production API:\n" +
+    "https://fraudshield-vvs5.onrender.com"
+);
 
     }
 
@@ -1910,7 +1909,7 @@ async function loadRecentTransactions(){
     if(!tableBody)return;
     tableBody.innerHTML='<tr><td colspan="8" class="transactions-loading">Loading transactions...</td></tr>';
     try{
-        const response=await fetch("http://127.0.0.1:8000/transactions");
+        const response = await fetch(`${API_URL}/transactions`);
         if(!response.ok)throw new Error("API returned status "+response.status);
         const data=await response.json();
         const transactions=data.transactions||[];
@@ -3415,10 +3414,9 @@ async function loadLatestRiskTransaction() {
 
     try {
 
-        const response =
-            await fetch(
-                "http://127.0.0.1:8000/transactions"
-            );
+        const API_URL = "https://fraudshield-vvs5.onrender.com";
+
+const response = await fetch(`${API_URL}/transactions`);
 
 
         if (!response.ok) {
@@ -3998,6 +3996,7 @@ document.addEventListener(
 
 
 <script>
+    
 
 async function loadAnalytics() {
 
@@ -4014,9 +4013,7 @@ async function loadAnalytics() {
         }
 
         const response =
-            await fetch(
-                "http://127.0.0.1:8000/analytics"
-            );
+            await await fetch("https://fraudshield-vvs5.onrender.com/analytics");
 
         if (!response.ok) {
             throw new Error(
