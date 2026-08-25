@@ -6,7 +6,6 @@ from src.predictor import predict_realtime_transaction
 from src.database import get_recent_transactions
 from src.database import get_connection
 
-
 # =========================================================
 # FASTAPI APPLICATION
 # =========================================================
