@@ -24,7 +24,7 @@ app = FastAPI(
 # CORS
 # =========================================================
 
-from fastapi.middleware.cors import CORSMiddleware
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,7 +37,7 @@ app.add_middleware(
         "https://fraudshield-frontend-bqor.onrender.com"
     ],
 
-    allow_credentials=True,
+    allow_credentials=False
 
     allow_methods=["*"],
 
@@ -105,8 +105,79 @@ def health():
 @app.post("/predict")
 def predict(transaction: Transaction):
 
-    result = predict_realtime_transaction(
-        transaction.model_dump()
+    data = transaction.model_dump()
+
+    # =====================================================
+    # TRANSACTION CONSISTENCY VALIDATION
+    # =====================================================
+
+    amount = data["amount"]
+
+    sender_old = data["oldbalanceOrg"]
+    sender_new = data["newbalanceOrig"]
+
+    receiver_old = data["oldbalanceDest"]
+    receiver_new = data["newbalanceDest"]
+
+    # Sender cannot spend more than available balance
+    if amount > sender_old:
+
+        return {
+            "fraud_probability": 1.0,
+            "fraud_probability_percent": 100.0,
+            "decision": "INVALID TRANSACTION",
+            "risk_level": "HIGH",
+            "validation_status": "FAILED",
+            "validation_message": (
+                "Transaction amount exceeds sender's "
+                "available balance."
+            )
+        }
+
+    # Check sender balance consistency
+    expected_sender_new = sender_old - amount
+
+    if abs(sender_new - expected_sender_new) > 0.01:
+
+        return {
+            "fraud_probability": 1.0,
+            "fraud_probability_percent": 100.0,
+            "decision": "INVALID TRANSACTION",
+            "risk_level": "HIGH",
+            "validation_status": "FAILED",
+            "validation_message": (
+                "Sender balance is inconsistent "
+                "with the transaction amount."
+            )
+        }
+
+    # Check receiver balance consistency
+    expected_receiver_new = receiver_old + amount
+
+    if abs(receiver_new - expected_receiver_new) > 0.01:
+
+        return {
+            "fraud_probability": 1.0,
+            "fraud_probability_percent": 100.0,
+            "decision": "INVALID TRANSACTION",
+            "risk_level": "HIGH",
+            "validation_status": "FAILED",
+            "validation_message": (
+                "Receiver balance is inconsistent "
+                "with the transaction amount."
+            )
+        }
+
+    # =====================================================
+    # AI FRAUD DETECTION
+    # =====================================================
+
+    result = predict_realtime_transaction(data)
+
+    # Add validation information
+    result["validation_status"] = "PASSED"
+    result["validation_message"] = (
+        "Transaction balance information is consistent."
     )
 
     return result
