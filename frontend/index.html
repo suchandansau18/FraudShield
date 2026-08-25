@@ -1689,21 +1689,15 @@ loading.style.display = "block";
 
     try {
 
-       const response = await fetch(`${API_URL}/predict`, {
+       const API_URL = "https://fraudshield-vvs5.onrender.com";
 
-                method: "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body:
-                    JSON.stringify(
-                        transaction
-                    )
-            }
-        );
+const response = await fetch(`${API_URL}/predict`, {
+    method: "POST",
+    headers: {
+        "Content-Type": "application/json"
+    },
+    body: JSON.stringify(transaction)
+});
 
 
         if (!response.ok) {
