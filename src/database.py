@@ -19,40 +19,12 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME"),
 
-    # Aiven requires SSL
+    # Aiven MySQL SSL
     "ssl_disabled": False,
 
-    # Connection timeout
-    "connection_timeout": 15
+    # Prevent very long connection waits
+    "connection_timeout": 10
 }
-
-
-# =========================================================
-# VALIDATE DATABASE CONFIGURATION
-# =========================================================
-
-def validate_database_config():
-
-    required_variables = [
-        "DB_HOST",
-        "DB_PORT",
-        "DB_USER",
-        "DB_PASSWORD",
-        "DB_NAME"
-    ]
-
-    missing_variables = [
-        variable
-        for variable in required_variables
-        if not os.getenv(variable)
-    ]
-
-    if missing_variables:
-
-        raise RuntimeError(
-            "Missing database environment variables: "
-            + ", ".join(missing_variables)
-        )
 
 
 # =========================================================
@@ -60,8 +32,6 @@ def validate_database_config():
 # =========================================================
 
 def get_connection():
-
-    validate_database_config()
 
     try:
 
@@ -80,10 +50,50 @@ def get_connection():
     except Error as error:
 
         print(
-            f"MySQL connection failed: {error}"
+            f"Database connection failed: {error}"
         )
 
         raise
+
+
+# =========================================================
+# DATABASE HEALTH CHECK
+# =========================================================
+
+def check_database_connection():
+
+    connection = None
+    cursor = None
+
+    try:
+
+        connection = get_connection()
+
+        cursor = connection.cursor()
+
+        cursor.execute("SELECT 1")
+
+        result = cursor.fetchone()
+
+        return result == (1,)
+
+    except Exception as error:
+
+        print(
+            f"Database health check failed: {error}"
+        )
+
+        return False
+
+    finally:
+
+        if cursor:
+
+            cursor.close()
+
+        if connection:
+
+            connection.close()
 
 
 # =========================================================
@@ -94,7 +104,9 @@ def get_sender_history(name_orig):
 
     connection = get_connection()
 
-    cursor = connection.cursor(dictionary=True)
+    cursor = connection.cursor(
+        dictionary=True
+    )
 
     try:
 
@@ -138,7 +150,9 @@ def get_receiver_history(name_dest):
 
     connection = get_connection()
 
-    cursor = connection.cursor(dictionary=True)
+    cursor = connection.cursor(
+        dictionary=True
+    )
 
     try:
 
@@ -215,7 +229,10 @@ def save_transaction(
             transaction["nameDest"],
             transaction["oldbalanceDest"],
             transaction["newbalanceDest"],
-            transaction.get("isFlaggedFraud", 0),
+            transaction.get(
+                "isFlaggedFraud",
+                0
+            ),
             fraud_probability,
             decision,
             risk_level
@@ -227,6 +244,12 @@ def save_transaction(
         )
 
         connection.commit()
+
+    except Exception:
+
+        connection.rollback()
+
+        raise
 
     finally:
 
@@ -242,7 +265,9 @@ def get_recent_transactions(limit=10):
 
     connection = get_connection()
 
-    cursor = connection.cursor(dictionary=True)
+    cursor = connection.cursor(
+        dictionary=True
+    )
 
     try:
 
@@ -254,16 +279,22 @@ def get_recent_transactions(limit=10):
                 amount,
                 name_orig,
                 name_dest,
+
                 old_balance_orig,
                 new_balance_orig,
+
                 old_balance_dest,
                 new_balance_dest,
+
                 fraud_probability,
                 decision,
                 risk_level,
                 created_at
+
             FROM transactions
+
             ORDER BY id DESC
+
             LIMIT %s
         """
 
@@ -321,6 +352,12 @@ def update_transaction_prediction(
         connection.commit()
 
         return cursor.rowcount
+
+    except Exception:
+
+        connection.rollback()
+
+        raise
 
     finally:
 
