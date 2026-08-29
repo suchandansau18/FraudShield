@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.predictor import predict_realtime_transaction
-from src.database import get_recent_transactions
-from src.database import get_connection
-from src.database import check_database_connection
+from src.database import (
+    get_recent_transactions,
+    get_connection,
+    check_database_connection
+)
 
 
 # =========================================================
@@ -86,7 +88,7 @@ def home():
 
 
 # =========================================================
-# HEALTH CHECK
+# BASIC HEALTH CHECK
 # =========================================================
 
 @app.get("/health")
@@ -110,40 +112,42 @@ def health():
 
 
 # =========================================================
-# DATABASE CONNECTION TEST
-# =========================================================
-# This endpoint is only for checking whether Render
-# can connect to your Aiven MySQL database.
+# DATABASE TEST ENDPOINT
 # =========================================================
 
 @app.get("/db-test")
-def db_test():
+def database_test():
 
     try:
 
         connection = get_connection()
 
-        if connection.is_connected():
+        cursor = connection.cursor()
 
-            connection.close()
+        cursor.execute("SELECT 1")
+
+        result = cursor.fetchone()
+
+        cursor.close()
+        connection.close()
+
+        if result == (1,):
 
             return {
                 "status": "success",
                 "message": "MySQL connection successful"
             }
 
-        else:
+        return {
+            "status": "failed",
+            "message": "MySQL connection test failed"
+        }
 
-            return {
-                "status": "failed",
-                "message": "MySQL connection was not established"
-            }
-
-    except Exception as e:
+    except Exception as error:
 
         return {
             "status": "failed",
-            "message": str(e)
+            "message": str(error)
         }
 
 
@@ -155,6 +159,7 @@ def db_test():
 def predict(transaction: Transaction):
 
     data = transaction.model_dump()
+
 
     # =====================================================
     # TRANSACTION CONSISTENCY VALIDATION
@@ -170,7 +175,81 @@ def predict(transaction: Transaction):
 
 
     # =====================================================
-    # 1. CHECK SENDER AVAILABLE BALANCE
+    # BASIC INPUT VALIDATION
+    # =====================================================
+
+    if amount < 0:
+
+        return {
+            "fraud_probability": 1.0,
+            "fraud_probability_percent": 100.0,
+            "decision": "INVALID TRANSACTION",
+            "risk_level": "HIGH",
+            "validation_status": "FAILED",
+            "validation_message": (
+                "Transaction amount cannot be negative."
+            )
+        }
+
+
+    if sender_old < 0:
+
+        return {
+            "fraud_probability": 1.0,
+            "fraud_probability_percent": 100.0,
+            "decision": "INVALID TRANSACTION",
+            "risk_level": "HIGH",
+            "validation_status": "FAILED",
+            "validation_message": (
+                "Sender balance cannot be negative."
+            )
+        }
+
+
+    if sender_new < 0:
+
+        return {
+            "fraud_probability": 1.0,
+            "fraud_probability_percent": 100.0,
+            "decision": "INVALID TRANSACTION",
+            "risk_level": "HIGH",
+            "validation_status": "FAILED",
+            "validation_message": (
+                "Sender new balance cannot be negative."
+            )
+        }
+
+
+    if receiver_old < 0:
+
+        return {
+            "fraud_probability": 1.0,
+            "fraud_probability_percent": 100.0,
+            "decision": "INVALID TRANSACTION",
+            "risk_level": "HIGH",
+            "validation_status": "FAILED",
+            "validation_message": (
+                "Receiver balance cannot be negative."
+            )
+        }
+
+
+    if receiver_new < 0:
+
+        return {
+            "fraud_probability": 1.0,
+            "fraud_probability_percent": 100.0,
+            "decision": "INVALID TRANSACTION",
+            "risk_level": "HIGH",
+            "validation_status": "FAILED",
+            "validation_message": (
+                "Receiver new balance cannot be negative."
+            )
+        }
+
+
+    # =====================================================
+    # CHECK SENDER AVAILABLE BALANCE
     # =====================================================
 
     if amount > sender_old:
@@ -189,12 +268,14 @@ def predict(transaction: Transaction):
 
 
     # =====================================================
-    # 2. CHECK SENDER BALANCE CONSISTENCY
+    # CHECK SENDER BALANCE CONSISTENCY
     # =====================================================
 
     expected_sender_new = sender_old - amount
 
-    if abs(sender_new - expected_sender_new) > 0.01:
+    if abs(
+        sender_new - expected_sender_new
+    ) > 0.01:
 
         return {
             "fraud_probability": 1.0,
@@ -210,12 +291,14 @@ def predict(transaction: Transaction):
 
 
     # =====================================================
-    # 3. CHECK RECEIVER BALANCE CONSISTENCY
+    # CHECK RECEIVER BALANCE CONSISTENCY
     # =====================================================
 
     expected_receiver_new = receiver_old + amount
 
-    if abs(receiver_new - expected_receiver_new) > 0.01:
+    if abs(
+        receiver_new - expected_receiver_new
+    ) > 0.01:
 
         return {
             "fraud_probability": 1.0,
@@ -231,14 +314,14 @@ def predict(transaction: Transaction):
 
 
     # =====================================================
-    # 4. AI FRAUD DETECTION
+    # AI FRAUD DETECTION
     # =====================================================
 
     result = predict_realtime_transaction(data)
 
 
     # =====================================================
-    # 5. ADD VALIDATION INFORMATION
+    # ADD VALIDATION INFORMATION
     # =====================================================
 
     result["validation_status"] = "PASSED"
@@ -247,10 +330,6 @@ def predict(transaction: Transaction):
         "Transaction balance information is consistent."
     )
 
-
-    # =====================================================
-    # 6. RETURN RESULT
-    # =====================================================
 
     return result
 
@@ -262,22 +341,11 @@ def predict(transaction: Transaction):
 @app.get("/transactions")
 def recent_transactions():
 
-    try:
+    transactions = get_recent_transactions(10)
 
-        transactions = get_recent_transactions(10)
-
-        return {
-            "status": "success",
-            "transactions": transactions
-        }
-
-    except Exception as e:
-
-        return {
-            "status": "failed",
-            "message": str(e),
-            "transactions": []
-        }
+    return {
+        "transactions": transactions
+    }
 
 
 # =========================================================
@@ -287,25 +355,18 @@ def recent_transactions():
 @app.get("/analytics")
 def get_analytics():
 
-    connection = None
-    cursor = None
+    connection = get_connection()
+
+    cursor = connection.cursor(
+        dictionary=True
+    )
+
 
     try:
 
-        # =================================================
-        # DATABASE CONNECTION
-        # =================================================
-
-        connection = get_connection()
-
-        cursor = connection.cursor(
-            dictionary=True
-        )
-
-
-        # =================================================
+        # -------------------------------------------------
         # TOTAL TRANSACTIONS
-        # =================================================
+        # -------------------------------------------------
 
         cursor.execute(
             """
@@ -315,14 +376,16 @@ def get_analytics():
         )
 
         total = (
-            cursor.fetchone()["total_transactions"]
+            cursor.fetchone()[
+                "total_transactions"
+            ]
             or 0
         )
 
 
-        # =================================================
+        # -------------------------------------------------
         # FRAUD TRANSACTIONS
-        # =================================================
+        # -------------------------------------------------
 
         cursor.execute(
             """
@@ -333,14 +396,16 @@ def get_analytics():
         )
 
         fraud = (
-            cursor.fetchone()["fraud_transactions"]
+            cursor.fetchone()[
+                "fraud_transactions"
+            ]
             or 0
         )
 
 
-        # =================================================
+        # -------------------------------------------------
         # LEGITIMATE TRANSACTIONS
-        # =================================================
+        # -------------------------------------------------
 
         cursor.execute(
             """
@@ -351,53 +416,62 @@ def get_analytics():
         )
 
         legitimate = (
-            cursor.fetchone()["legitimate_transactions"]
+            cursor.fetchone()[
+                "legitimate_transactions"
+            ]
             or 0
         )
 
 
-        # =================================================
+        # -------------------------------------------------
         # TOTAL TRANSACTION AMOUNT
-        # =================================================
+        # -------------------------------------------------
 
         cursor.execute(
             """
-            SELECT COALESCE(SUM(amount), 0)
-            AS total_amount
+            SELECT
+                COALESCE(
+                    SUM(amount),
+                    0
+                ) AS total_amount
             FROM transactions
             """
         )
 
         total_amount = (
-            cursor.fetchone()["total_amount"]
+            cursor.fetchone()[
+                "total_amount"
+            ]
             or 0
         )
 
 
-        # =================================================
+        # -------------------------------------------------
         # AVERAGE FRAUD PROBABILITY
-        # =================================================
+        # -------------------------------------------------
 
         cursor.execute(
             """
-            SELECT COALESCE(
-                AVG(fraud_probability),
-                0
-            ) AS average_fraud_probability
+            SELECT
+                COALESCE(
+                    AVG(fraud_probability),
+                    0
+                ) AS average_fraud_probability
             FROM transactions
             """
         )
 
         avg_probability = (
-            cursor.fetchone()
-            ["average_fraud_probability"]
+            cursor.fetchone()[
+                "average_fraud_probability"
+            ]
             or 0
         )
 
 
-        # =================================================
+        # -------------------------------------------------
         # RISK DISTRIBUTION
-        # =================================================
+        # -------------------------------------------------
 
         cursor.execute(
             """
@@ -430,9 +504,9 @@ def get_analytics():
                 )
 
 
-        # =================================================
+        # -------------------------------------------------
         # TRANSACTION TYPE DISTRIBUTION
-        # =================================================
+        # -------------------------------------------------
 
         cursor.execute(
             """
@@ -457,9 +531,9 @@ def get_analytics():
             ] = row["count"]
 
 
-        # =================================================
+        # -------------------------------------------------
         # FRAUD RATE
-        # =================================================
+        # -------------------------------------------------
 
         fraud_rate = 0
 
@@ -470,9 +544,9 @@ def get_analytics():
             ) * 100
 
 
-        # =================================================
+        # -------------------------------------------------
         # RETURN ANALYTICS
-        # =================================================
+        # -------------------------------------------------
 
         return {
 
@@ -506,45 +580,11 @@ def get_analytics():
 
             "transaction_types":
                 transaction_types
-        }
 
-
-    except Exception as e:
-
-        return {
-
-            "status": "failed",
-
-            "message": str(e),
-
-            "total_transactions": 0,
-
-            "fraud_transactions": 0,
-
-            "legitimate_transactions": 0,
-
-            "fraud_rate": 0,
-
-            "total_transaction_amount": 0,
-
-            "average_fraud_probability": 0,
-
-            "risk_distribution": {
-                "HIGH": 0,
-                "MEDIUM": 0,
-                "LOW": 0
-            },
-
-            "transaction_types": {}
         }
 
 
     finally:
 
-        if cursor:
-
-            cursor.close()
-
-        if connection:
-
-            connection.close()
+        cursor.close()
+        connection.close()
