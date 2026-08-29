@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from src.predictor import predict_realtime_transaction
 from src.database import get_recent_transactions
 from src.database import get_connection
+from src.database import check_database_connection
 
 
 # =========================================================
@@ -91,9 +92,20 @@ def home():
 @app.get("/health")
 def health():
 
+    database_connected = check_database_connection()
+
+    if database_connected:
+
+        return {
+            "status": "healthy",
+            "service": "fraud-detection-api",
+            "database": "connected"
+        }
+
     return {
-        "status": "healthy",
-        "service": "fraud-detection-api"
+        "status": "degraded",
+        "service": "fraud-detection-api",
+        "database": "unavailable"
     }
 
 
