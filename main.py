@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.predictor import predict_realtime_transaction
+
 from src.database import (
     get_recent_transactions,
     get_connection,
@@ -88,13 +89,15 @@ def home():
 
 
 # =========================================================
-# BASIC HEALTH CHECK
+# HEALTH CHECK
 # =========================================================
 
 @app.get("/health")
 def health():
 
-    database_connected = check_database_connection()
+    database_connected = (
+        check_database_connection()
+    )
 
     if database_connected:
 
@@ -112,11 +115,14 @@ def health():
 
 
 # =========================================================
-# DATABASE TEST ENDPOINT
+# DATABASE TEST
 # =========================================================
 
 @app.get("/db-test")
 def database_test():
+
+    connection = None
+    cursor = None
 
     try:
 
@@ -127,9 +133,6 @@ def database_test():
         cursor.execute("SELECT 1")
 
         result = cursor.fetchone()
-
-        cursor.close()
-        connection.close()
 
         if result == (1,):
 
@@ -150,6 +153,16 @@ def database_test():
             "message": str(error)
         }
 
+    finally:
+
+        if cursor:
+
+            cursor.close()
+
+        if connection:
+
+            connection.close()
+
 
 # =========================================================
 # FRAUD PREDICTION ENDPOINT
@@ -162,20 +175,22 @@ def predict(transaction: Transaction):
 
 
     # =====================================================
-    # TRANSACTION CONSISTENCY VALIDATION
+    # GET TRANSACTION VALUES
     # =====================================================
 
     amount = data["amount"]
 
     sender_old = data["oldbalanceOrg"]
+
     sender_new = data["newbalanceOrig"]
 
     receiver_old = data["oldbalanceDest"]
+
     receiver_new = data["newbalanceDest"]
 
 
     # =====================================================
-    # BASIC INPUT VALIDATION
+    # BASIC VALIDATION
     # =====================================================
 
     if amount < 0:
@@ -249,7 +264,7 @@ def predict(transaction: Transaction):
 
 
     # =====================================================
-    # CHECK SENDER AVAILABLE BALANCE
+    # CHECK SENDER BALANCE
     # =====================================================
 
     if amount > sender_old:
@@ -271,7 +286,9 @@ def predict(transaction: Transaction):
     # CHECK SENDER BALANCE CONSISTENCY
     # =====================================================
 
-    expected_sender_new = sender_old - amount
+    expected_sender_new = (
+        sender_old - amount
+    )
 
     if abs(
         sender_new - expected_sender_new
@@ -294,7 +311,9 @@ def predict(transaction: Transaction):
     # CHECK RECEIVER BALANCE CONSISTENCY
     # =====================================================
 
-    expected_receiver_new = receiver_old + amount
+    expected_receiver_new = (
+        receiver_old + amount
+    )
 
     if abs(
         receiver_new - expected_receiver_new
@@ -317,7 +336,9 @@ def predict(transaction: Transaction):
     # AI FRAUD DETECTION
     # =====================================================
 
-    result = predict_realtime_transaction(data)
+    result = predict_realtime_transaction(
+        data
+    )
 
 
     # =====================================================
@@ -335,13 +356,15 @@ def predict(transaction: Transaction):
 
 
 # =========================================================
-# RECENT TRANSACTIONS ENDPOINT
+# RECENT TRANSACTIONS
 # =========================================================
 
 @app.get("/transactions")
 def recent_transactions():
 
-    transactions = get_recent_transactions(10)
+    transactions = (
+        get_recent_transactions(10)
+    )
 
     return {
         "transactions": transactions
@@ -349,7 +372,7 @@ def recent_transactions():
 
 
 # =========================================================
-# ANALYTICS ENDPOINT
+# ANALYTICS
 # =========================================================
 
 @app.get("/analytics")
@@ -360,7 +383,6 @@ def get_analytics():
     cursor = connection.cursor(
         dictionary=True
     )
-
 
     try:
 
@@ -545,7 +567,7 @@ def get_analytics():
 
 
         # -------------------------------------------------
-        # RETURN ANALYTICS
+        # RESPONSE
         # -------------------------------------------------
 
         return {
@@ -580,9 +602,7 @@ def get_analytics():
 
             "transaction_types":
                 transaction_types
-
         }
-
 
     finally:
 
