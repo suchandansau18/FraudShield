@@ -1,6 +1,7 @@
 import os
 
 import mysql.connector
+from mysql.connector import Error
 
 from dotenv import load_dotenv
 
@@ -16,22 +17,73 @@ DB_CONFIG = {
     "port": int(os.getenv("DB_PORT", "3306")),
     "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME")
+    "database": os.getenv("DB_NAME"),
+
+    # Aiven requires SSL
+    "ssl_disabled": False,
+
+    # Connection timeout
+    "connection_timeout": 15
 }
+
+
+# =========================================================
+# VALIDATE DATABASE CONFIGURATION
+# =========================================================
+
+def validate_database_config():
+
+    required_variables = [
+        "DB_HOST",
+        "DB_PORT",
+        "DB_USER",
+        "DB_PASSWORD",
+        "DB_NAME"
+    ]
+
+    missing_variables = [
+        variable
+        for variable in required_variables
+        if not os.getenv(variable)
+    ]
+
+    if missing_variables:
+
+        raise RuntimeError(
+            "Missing database environment variables: "
+            + ", ".join(missing_variables)
+        )
 
 
 # =========================================================
 # DATABASE CONNECTION
 # =========================================================
+
 def get_connection():
 
-    connection = mysql.connector.connect(
-        **DB_CONFIG,
-        ssl_disabled=False
-    )
+    validate_database_config()
 
-    return connection
+    try:
 
+        connection = mysql.connector.connect(
+            **DB_CONFIG
+        )
+
+        if not connection.is_connected():
+
+            raise RuntimeError(
+                "MySQL connection was not established."
+            )
+
+        return connection
+
+    except Error as error:
+
+        print(
+            f"MySQL connection failed: {error}"
+        )
+
+        raise
 
 
 # =========================================================
@@ -44,27 +96,29 @@ def get_sender_history(name_orig):
 
     cursor = connection.cursor(dictionary=True)
 
-    query = """
-        SELECT
-            step,
-            amount,
-            transaction_type
-        FROM transactions
-        WHERE name_orig = %s
-        ORDER BY step ASC
-    """
+    try:
 
-    cursor.execute(
-        query,
-        (name_orig,)
-    )
+        query = """
+            SELECT
+                step,
+                amount,
+                transaction_type
+            FROM transactions
+            WHERE name_orig = %s
+            ORDER BY step ASC
+        """
 
-    history = cursor.fetchall()
+        cursor.execute(
+            query,
+            (name_orig,)
+        )
 
-    cursor.close()
-    connection.close()
+        return cursor.fetchall()
 
-    return history
+    finally:
+
+        cursor.close()
+        connection.close()
 
 
 # =========================================================
@@ -86,26 +140,28 @@ def get_receiver_history(name_dest):
 
     cursor = connection.cursor(dictionary=True)
 
-    query = """
-        SELECT
-            step,
-            amount
-        FROM transactions
-        WHERE name_dest = %s
-        ORDER BY step ASC
-    """
+    try:
 
-    cursor.execute(
-        query,
-        (name_dest,)
-    )
+        query = """
+            SELECT
+                step,
+                amount
+            FROM transactions
+            WHERE name_dest = %s
+            ORDER BY step ASC
+        """
 
-    history = cursor.fetchall()
+        cursor.execute(
+            query,
+            (name_dest,)
+        )
 
-    cursor.close()
-    connection.close()
+        return cursor.fetchall()
 
-    return history
+    finally:
+
+        cursor.close()
+        connection.close()
 
 
 # =========================================================
@@ -123,54 +179,59 @@ def save_transaction(
 
     cursor = connection.cursor()
 
-    query = """
-        INSERT INTO transactions (
-            step,
-            transaction_type,
-            amount,
-            name_orig,
-            old_balance_orig,
-            new_balance_orig,
-            name_dest,
-            old_balance_dest,
-            new_balance_dest,
-            is_flagged_fraud,
+    try:
+
+        query = """
+            INSERT INTO transactions (
+                step,
+                transaction_type,
+                amount,
+                name_orig,
+                old_balance_orig,
+                new_balance_orig,
+                name_dest,
+                old_balance_dest,
+                new_balance_dest,
+                is_flagged_fraud,
+                fraud_probability,
+                decision,
+                risk_level
+            )
+
+            VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s
+            )
+        """
+
+        values = (
+            transaction["step"],
+            transaction["type"],
+            transaction["amount"],
+            transaction["nameOrig"],
+            transaction["oldbalanceOrg"],
+            transaction["newbalanceOrig"],
+            transaction["nameDest"],
+            transaction["oldbalanceDest"],
+            transaction["newbalanceDest"],
+            transaction.get("isFlaggedFraud", 0),
             fraud_probability,
             decision,
             risk_level
         )
-        VALUES (
-            %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s,
-            %s, %s, %s
+
+        cursor.execute(
+            query,
+            values
         )
-    """
 
-    values = (
-        transaction["step"],
-        transaction["type"],
-        transaction["amount"],
-        transaction["nameOrig"],
-        transaction["oldbalanceOrg"],
-        transaction["newbalanceOrig"],
-        transaction["nameDest"],
-        transaction["oldbalanceDest"],
-        transaction["newbalanceDest"],
-        transaction.get("isFlaggedFraud", 0),
-        fraud_probability,
-        decision,
-        risk_level
-    )
+        connection.commit()
 
-    cursor.execute(
-        query,
-        values
-    )
+    finally:
 
-    connection.commit()
-
-    cursor.close()
-    connection.close()
+        cursor.close()
+        connection.close()
 
 
 # =========================================================
@@ -183,44 +244,42 @@ def get_recent_transactions(limit=10):
 
     cursor = connection.cursor(dictionary=True)
 
-    query = """
-        SELECT
-            id,
-            step,
-            transaction_type,
-            amount,
-            name_orig,
-            name_dest,
+    try:
 
-            old_balance_orig,
-            new_balance_orig,
-            old_balance_dest,
-            new_balance_dest,
+        query = """
+            SELECT
+                id,
+                step,
+                transaction_type,
+                amount,
+                name_orig,
+                name_dest,
+                old_balance_orig,
+                new_balance_orig,
+                old_balance_dest,
+                new_balance_dest,
+                fraud_probability,
+                decision,
+                risk_level,
+                created_at
+            FROM transactions
+            ORDER BY id DESC
+            LIMIT %s
+        """
 
-            fraud_probability,
-            decision,
-            risk_level,
-            created_at
+        cursor.execute(
+            query,
+            (limit,)
+        )
 
-        FROM transactions
+        return cursor.fetchall()
 
-        ORDER BY id DESC
+    finally:
 
-        LIMIT %s
-    """
+        cursor.close()
+        connection.close()
 
-    cursor.execute(
-        query,
-        (limit,)
-    )
 
-    transactions = cursor.fetchall()
-
-    cursor.close()
-
-    connection.close()
-
-    return transactions
 # =========================================================
 # UPDATE EXISTING TRANSACTION PREDICTION
 # =========================================================
@@ -236,33 +295,34 @@ def update_transaction_prediction(
 
     cursor = connection.cursor()
 
-    query = """
-        UPDATE transactions
+    try:
 
-        SET
-            fraud_probability = %s,
-            decision = %s,
-            risk_level = %s
+        query = """
+            UPDATE transactions
 
-        WHERE id = %s
-    """
+            SET
+                fraud_probability = %s,
+                decision = %s,
+                risk_level = %s
 
-    cursor.execute(
-        query,
-        (
-            float(fraud_probability),
-            decision,
-            risk_level,
-            transaction_id
+            WHERE id = %s
+        """
+
+        cursor.execute(
+            query,
+            (
+                float(fraud_probability),
+                decision,
+                risk_level,
+                transaction_id
+            )
         )
-    )
 
-    connection.commit()
+        connection.commit()
 
-    updated_rows = cursor.rowcount
+        return cursor.rowcount
 
-    cursor.close()
+    finally:
 
-    connection.close()
-
-    return updated_rows
+        cursor.close()
+        connection.close()
