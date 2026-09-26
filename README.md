@@ -1,4 +1,5 @@
 # 🛡️ FraudShield
+![FraudShield Dashboard](./Screenshot%202026-09-26%20131948.png)
 
 ## AI-Based Behaviour-Aware Real-Time Payment Fraud Detection System
 
