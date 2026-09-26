@@ -5,7 +5,7 @@
 FraudShield is an AI-powered payment fraud detection system designed to analyze digital payment transactions in real time and identify potentially fraudulent behaviour.
 
 The system combines machine learning, behavioural analysis, transaction validation, REST APIs, database storage, and an interactive web dashboard into a complete end-to-end fraud detection platform.
-![FraudShield Dashboard](./Screenshot%202026-09-26%20131948.png)
+![FraudShield Dashboard](./fraudshield-dashboard.png)
 
 ---
 
